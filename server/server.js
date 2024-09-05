@@ -106,10 +106,10 @@ router.put('/data/:path*', async (ctx) => {
 });
 
 // Characters used for encoding -- in ascii order
-const characters = '-.0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz~';
-const base = characters.length; // Base 66
+const characters = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz~';
+const base = characters.length; // Base 64
 
-// Function to encode an integer to a base-66 string
+// Function to encode an integer to a base-64 string
 function encode(num) {
   console.log("encode: " + num);
   let encoded = '';
@@ -131,14 +131,14 @@ function decode(str) {
 }
 
 // Route for redirecting to the original URL
-router.get('/short/:shortUrl',  async (ctx) => {
-  const { shortUrl } = ctx.params;
+router.get('/short/:shortUrl/:domain*',  async (ctx) => {
+  const { shortUrl, domain } = ctx.params;
   const originalUrl = await loadUrl(decode(shortUrl));
   if (originalUrl.rowCount==0) {
     ctx.status = 404;
     ctx.body = 'URL not found';
   } else {
-    ctx.redirect(originalUrl.rows[0].url);
+    ctx.redirect(domain + originalUrl.rows[0].url);
   }
 });
 
@@ -151,8 +151,8 @@ router.post('/shorten', async (ctx) => {
     ctx.body = 'Invalid request: originalUrl is required';
     return;
   }
-
-  const shortUrl = encode(await saveUrl(originalUrl)); // Encode the current ID to generate the short URL
+  const result = await saveUrl(originalUrl)
+  const shortUrl = encode(result.rows[0].short_id); // Encode the current ID to generate the short URL
 
   ctx.body = {
     originalUrl,
