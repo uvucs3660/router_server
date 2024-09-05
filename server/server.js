@@ -14,7 +14,7 @@
 // api endpoint POST /data/path/to/data - takes a path and data and stores it
 
 // ours
-const { load, save } = require('./store');
+const { load, save, combine, loadUrl, saveUrl } = require('./store');
 // native
 const path = require('path');
 const fs = require('fs');
@@ -64,7 +64,9 @@ client.on('message', async (topic, message) => {
 
 const app = new Koa();
 const router = new Router();
-const port = 8080;
+const port = 8080 || process.env.SERVER_PORT;
+const baseUrl = `https://data.uvucs.org/short/`;
+
 const upload = multer({ 
   dest: 'uploads/',
   limits: {
@@ -92,6 +94,70 @@ router.post('/data/:path*', async (ctx) => {
   const result = await save(path, jsonStr);
   ctx.body = result.rows;
   ctx.body[0]['data'] = ctx.request.body;
+});
+
+router.put('/data/:path*', async (ctx) => {
+  let path = ctx.params.path;
+  console.log("POST path: "+ path);
+  const jsonStr = JSON.stringify(ctx.request.body);
+  const result = await combine(path, jsonStr);
+  ctx.body = result.rows;
+  ctx.body[0]['data'] = ctx.request.body;
+});
+
+// Characters used for encoding -- in ascii order
+const characters = '-.0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz~';
+const base = characters.length; // Base 66
+
+// Function to encode an integer to a base-66 string
+function encode(num) {
+  console.log("encode: " + num);
+  let encoded = '';
+  while (num > 0) {
+    encoded = characters[num % base] + encoded;
+    num = Math.floor(num / base);
+  }
+  return encoded;
+}
+
+// Function to decode a base-66 string to an integer
+function decode(str) {
+  console.log("decode: " + str);
+  let decoded = 0;
+  for (let i = 0; i < str.length; i++) {
+    decoded = decoded * base + characters.indexOf(str[i]);
+  }
+  return decoded;
+}
+
+// Route for redirecting to the original URL
+router.get('/short/:shortUrl',  async (ctx) => {
+  const { shortUrl } = ctx.params;
+  const originalUrl = await loadUrl(decode(shortUrl));
+  if (originalUrl.rowCount==0) {
+    ctx.status = 404;
+    ctx.body = 'URL not found';
+  } else {
+    ctx.redirect(originalUrl.rows[0].url);
+  }
+});
+
+// Route for shortening a new URL
+let currentId = 1; // Initialize a counter to generate unique IDs for URLs
+router.post('/shorten', async (ctx) => {
+  const { originalUrl } = ctx.request.body;
+  if (!originalUrl) {
+    ctx.status = 400;
+    ctx.body = 'Invalid request: originalUrl is required';
+    return;
+  }
+
+  const shortUrl = encode(await saveUrl(originalUrl)); // Encode the current ID to generate the short URL
+
+  ctx.body = {
+    originalUrl,
+    shortUrl: `${baseUrl}${shortUrl}`
+  };
 });
 
 // New endpoint for file upload

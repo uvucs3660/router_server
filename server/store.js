@@ -11,7 +11,33 @@ async function save(path, data) {
     [path, data]);
 }
 
+async function combine(path,data){
+  return await queryDatabase(`    
+    UPDATE document_store
+    SET data = data || $2::jsonb
+    WHERE path = $1;`,
+    [path, data]);
+}
+
+async function loadUrl(id) {
+  return await queryDatabase('SELECT * FROM short_urls WHERE short_id = $1', [id]);
+}
+
+async function saveUrl(id, url) {
+  if (id == null){
+    return await queryDatabase(`
+      INSERT INTO short_urls (url) VALUES ($1) RETURNING short_id;`,[id] );
+  } else {
+    return await queryDatabase(`
+      UPDATE short_urls set url = $2 WHERE short_id = $1 RETURNING short_id;`,[id, url] );
+  }
+}
+
+
 module.exports = {
   load,
-  save
+  save,
+  combine,
+  loadUrl,
+  saveUrl
 };

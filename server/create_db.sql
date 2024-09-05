@@ -7,3 +7,10 @@ CREATE TABLE document_store (
 );
 
 CREATE UNIQUE INDEX document_store_path_key ON document_store (path);
+
+CREATE TABLE IF NOT EXISTS public.short_urls
+(
+    short_id bigserial,
+    url text NOT NULL,
+    CONSTRAINT short_urls_pkey PRIMARY KEY (short_id)
+);
