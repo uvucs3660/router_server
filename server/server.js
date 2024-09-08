@@ -1,8 +1,7 @@
 // npm install koa koa-router koa-static koa-cors koa-body @koa/multer
 //
 // path structure
-// class/members
-// class/team_roster
+// cs3660/fall/team_projects.json
 // presentation/projectX/teamY/
 // gitstatus/projectX/teamY
 // survey/projectX/teamY
@@ -65,7 +64,7 @@ client.on('message', async (topic, message) => {
 const app = new Koa();
 const router = new Router();
 const port = 8080 || process.env.SERVER_PORT;
-const baseUrl = `https://data.uvucs.org/short/`;
+const baseUrl = `https://uvucs.org/short/`;
 
 const upload = multer({ 
   dest: 'uploads/',
@@ -81,9 +80,11 @@ app.use(serve("html"));
 
 // Routes
 router.get('/data/:path*', async (ctx) => {
-  let path = ctx.params.path;
+  const path = ctx.params.path;
+  const { json_path } = ctx.query;
+  
   console.log("GET path: "+ path);
-  const result = await load(path);
+  const result = await load(path, json_path);
   ctx.body = result.rows[0].data;
 });
 
@@ -98,7 +99,7 @@ router.post('/data/:path*', async (ctx) => {
 
 router.put('/data/:path*', async (ctx) => {
   let path = ctx.params.path;
-  console.log("POST path: "+ path);
+  console.log("PUT path: "+ path);
   const jsonStr = JSON.stringify(ctx.request.body);
   const result = await combine(path, jsonStr);
   ctx.body = result.rows;
@@ -131,7 +132,7 @@ function decode(str) {
 }
 
 // Route for redirecting to the original URL
-router.get('/short/:shortUrl/:domain*',  async (ctx) => {
+router.get('/shortdom/:shortUrl/:domain*',  async (ctx) => {
   const { shortUrl, domain } = ctx.params;
   const originalUrl = await loadUrl(decode(shortUrl));
   if (originalUrl.rowCount==0) {
@@ -142,16 +143,128 @@ router.get('/short/:shortUrl/:domain*',  async (ctx) => {
   }
 });
 
+// Route for redirecting to the original URL
+router.get('/short/:shortUrl',  async (ctx) => {
+  const { shortUrl  } = ctx.params;
+  const { student, username, password} = ctx.query;
+
+  const originalUrl = await loadUrl(decode(shortUrl));
+  if (originalUrl.rowCount==0) {
+    ctx.status = 404;
+    ctx.body = 'URL not found';
+  } else {
+    ctx.redirect(originalUrl.rows[0].url);
+  }
+});
+
+// Function to execute shell commands
+function runCommand(command, cwd) {
+  return new Promise((resolve, reject) => {
+    exec(command, { cwd }, (error, stdout, stderr) => {
+      if (error) {
+        console.error(`Error executing command: ${error}`);
+        reject(error);
+      } else {
+        console.log(stdout);
+        resolve(stdout);
+      }
+    });
+  });
+}
+
+// Route to handle file upload and subsequent operations
+router.post('/appload', koaBody({ multipart: true }), async (ctx) => {
+  const file = ctx.request.files.file; // Expecting form field named 'file'
+
+  if (!file) {
+    ctx.status = 400;
+    ctx.body = 'No file uploaded';
+    return;
+  }
+
+  const filePath = file.path;
+  const uploadDir = path.join(__dirname, 'uploads');
+
+  // Ensure the uploads directory exists
+  if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir);
+  }
+
+  const extractedDir = path.join(uploadDir, path.basename(file.name, path.extname(file.name)));
+
+  // Unzip the file
+  try {
+    await fs.createReadStream(filePath)
+      .pipe(unzipper.Extract({ path: extractedDir }))
+      .promise();
+  } catch (err) {
+    console.error('Error extracting zip file:', err);
+    ctx.status = 500;
+    ctx.body = 'Failed to extract zip file';
+    return;
+  }
+
+  // Run npm install in server and html directories
+  try {
+    await runCommand('npm install', path.join(extractedDir, 'server'));
+    await runCommand('npm install', path.join(extractedDir, 'html'));
+
+    // Run node server.js from the server directory
+    runCommand('node server.js', path.join(extractedDir, 'server'));
+
+    ctx.status = 200;
+    ctx.body = 'File uploaded and processed successfully';
+  } catch (err) {
+    console.error('Error running commands:', err);
+    ctx.status = 500;
+    ctx.body = 'Failed to run commands';
+  }
+});
+
+
+// Route for redirecting to the original URL
+// https://uvucs.org/auths?s=1&f=first&l=last&g=github&u=username&p=password
+router.get('/auths', async (ctx) => {
+  // Extract query parameters
+  const { s, f, l, g, u, p } = ctx.query;
+
+  // Create JSON object from URL parameters
+  const studentData = {
+    student: s,
+    first: f,
+    last: l,
+    github: g,
+    username: u,
+    password: p,
+  };
+
+  // Pass data to HTML template
+  ctx.body = `
+    <!DOCTYPE html>
+    <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <title>Student Actions</title>
+        <script type="module" src="javascript/student-actions.js"></script>
+      </head>
+      <body>
+        <student-actions data='${JSON.stringify(studentData)}'></student-actions>
+      </body>
+    </html>
+  `;
+});
+
+
 // Route for shortening a new URL
 let currentId = 1; // Initialize a counter to generate unique IDs for URLs
 router.post('/shorten', async (ctx) => {
-  const { originalUrl } = ctx.request.body;
+  const { shortId, originalUrl } = ctx.request.body;
   if (!originalUrl) {
     ctx.status = 400;
     ctx.body = 'Invalid request: originalUrl is required';
     return;
   }
-  const result = await saveUrl(originalUrl)
+  const result = await saveUrl(shortId, originalUrl);
   const shortUrl = encode(result.rows[0].short_id); // Encode the current ID to generate the short URL
 
   ctx.body = {
