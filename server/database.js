@@ -1,9 +1,13 @@
 const { Pool } = require('pg');
 
+const dev = process.env.DEV_DB_URL;
+const prod = process.env.CLASS_DB_URL;
+
+const connect = dev ? dev : prod;
+
 const pool = new Pool({
-  connectionString: process.env.DEV_DB_URL
+  connectionString: connect
 });
-console.log("Connected to database");
 
 async function queryDatabase(query, params) {
     console.log("queryDatabase: ", query, params);

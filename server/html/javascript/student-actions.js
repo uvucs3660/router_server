@@ -32,7 +32,7 @@ class StudentActions extends LitElement {
 
   renderAction(label, action) {
     const { student, username, password } = this.data;
-    const actionLink = `/shorty/${action}?student=${student}&username=${username}&password=${password}`;
+    const actionLink = `/short/${action}?student=${student}&username=${username}&password=${password}`;
     return html`<li><a href="${actionLink}">${label}</a></li>`;
   }
 

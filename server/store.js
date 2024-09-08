@@ -31,11 +31,17 @@ async function loadUrl(id) {
 }
 
 async function saveUrl(id,url) {
-  return await queryDatabase(`
-    INSERT INTO short_urls (short_id, url) VALUES ($1, $2)
-    ON CONFLICT (id) DO UPDATE SET url = $2 RETURNING short_id;`
-    ,[id,url] );
-}
+  if (id  === undefined) {
+    return await queryDatabase(`
+      INSERT INTO short_urls ( url) VALUES ($1) returning short_id;`
+      ,[url] );
+  } else {
+    return await queryDatabase(`
+      INSERT INTO short_urls (short_id, url) VALUES ($1, $2)
+      ON CONFLICT (short_id) DO UPDATE SET url = $2 RETURNING short_id;`
+      ,[id,url] );
+    }
+  }
 
 
 module.exports = {

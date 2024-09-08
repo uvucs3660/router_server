@@ -30,8 +30,8 @@
     <div class="container">
         <h1>URL Shortener</h1>
         <form id="shorten-form">
-            <input type="text" id="short-id" placeholder="Enter the Short ID"> (Created if blank)
-            <input type="text" id="original-url" placeholder="Enter the URL to shorten" required>
+            <input type="text" id="short-id" name="short-id" placeholder="Enter the Short ID"> (Created if blank)
+            <input type="text" id="original-url" name="original-url" placeholder="Enter the URL to shorten" required>
             <button type="submit">Shorten URL</button>
         </form>
         <p id="result"></p>
@@ -41,17 +41,19 @@
         document.getElementById('shorten-form').addEventListener('submit', async (event) => {
             event.preventDefault();
             const originalUrl = document.getElementById('original-url').value;
+            const shortId = document.getElementById('short-id').value;
             const response = await fetch('/shorten', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ originalUrl })
+                body: JSON.stringify({ "originalUrl": originalUrl, "shortId": shortId })
             });
 
             const result = await response.json();
             document.getElementById('result').textContent = `Shortened URL: ${result.shortUrl}`;
         });
+
     </script>
 </body>
 </html>

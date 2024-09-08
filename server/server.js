@@ -148,12 +148,17 @@ router.get('/short/:shortUrl',  async (ctx) => {
   const { shortUrl  } = ctx.params;
   const { student, username, password} = ctx.query;
 
-  const originalUrl = await loadUrl(decode(shortUrl));
-  if (originalUrl.rowCount==0) {
+  const result = await loadUrl(decode(shortUrl));
+  if (result.rowCount==0) {
     ctx.status = 404;
     ctx.body = 'URL not found';
   } else {
-    ctx.redirect(originalUrl.rows[0].url);
+    if (username === undefined) {
+      ctx.redirect(result.rows[0].url);
+    } else {
+      const redirectUrl = `${result.rows[0].url}?student=${encodeURIComponent(student)}&username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
+      ctx.redirect(redirectUrl);
+    }
   }
 });
 
@@ -264,7 +269,7 @@ router.post('/shorten', async (ctx) => {
     ctx.body = 'Invalid request: originalUrl is required';
     return;
   }
-  const result = await saveUrl(shortId, originalUrl);
+  const result = await saveUrl(decode(shortId), originalUrl);
   const shortUrl = encode(result.rows[0].short_id); // Encode the current ID to generate the short URL
 
   ctx.body = {
