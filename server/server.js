@@ -144,7 +144,7 @@ router.get('/shortdom/:shortUrl/:domain*',  async (ctx) => {
 });
 
 // Route for redirecting to the original URL
-router.get('/short/:shortUrl',  async (ctx) => {
+router.get('/s/:shortUrl',  async (ctx) => {
   const { shortUrl  } = ctx.params;
   const { student, username, password} = ctx.query;
 
@@ -226,10 +226,9 @@ router.post('/appload', koaBody({ multipart: true }), async (ctx) => {
   }
 });
 
-
 // Route for redirecting to the original URL
-// https://uvucs.org/auths?s=1&f=first&l=last&g=github&u=username&p=password
-router.get('/auths', async (ctx) => {
+// https://uvucs.org/auth?s=1&f=first&l=last&g=github&u=username&p=password
+router.get('/auth', async (ctx) => {
   // Extract query parameters
   const { s, f, l, g, u, p } = ctx.query;
 

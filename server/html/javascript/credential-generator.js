@@ -74,14 +74,14 @@ class CredentialGenerator extends LitElement {
 
   getQrCodeUrl(student) {
     return `https://zxing.org/w/chart?cht=qr&chs=350x350&chld=L&choe=UTF-8&chl=${encodeURIComponent(
-      `http://uvucs.org/short/${student.url}`
+      `${student.url}`
     )}`;
   }
 
   async writeNfcTag(student) {
     try {
       const ndef = new NDEFReader();
-      await ndef.write(`http://uvucs.org/short/${student.url}`);
+      await ndef.write(`${student.url}`);
       alert(`NFC tag written successfully for ${student.first} ${student.last}`);
     } catch (error) {
       console.error('Error writing NFC tag:', error);
@@ -100,7 +100,7 @@ class CredentialGenerator extends LitElement {
         for (const record of message.records) {
           const textDecoder = new TextDecoder(record.encoding);
           const recordData = textDecoder.decode(record.data);
-          if (recordData === `http://uvucs.org/short/${this.selectedStudent.url}`) {
+          if (recordData === `${this.selectedStudent.url}`) {
             alert('NFC tag content matches the expected URL.');
             foundUrl = true;
             break;
