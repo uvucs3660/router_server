@@ -81,7 +81,9 @@ class CredentialGenerator extends LitElement {
   async writeNfcTag(student) {
     try {
       const ndef = new NDEFReader();
-      await ndef.write(`${student.url}`);
+      await ndef.write({
+        records: [{ recordType: "url", data: student.url }],
+      });
       alert(`NFC tag written successfully for ${student.first} ${student.last}`);
     } catch (error) {
       console.error('Error writing NFC tag:', error);
