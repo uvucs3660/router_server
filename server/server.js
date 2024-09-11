@@ -64,7 +64,7 @@ client.on('message', async (topic, message) => {
 const app = new Koa();
 const router = new Router();
 const port = 8080 || process.env.SERVER_PORT;
-const baseUrl = `https://uvucs.org/short/`;
+const baseUrl = `https://uvucs.org/s/`;
 
 const upload = multer({ 
   dest: 'uploads/',
@@ -79,6 +79,32 @@ app.use(koaBody());
 app.use(serve("html"));
 
 // Routes
+
+// https://chatgpt.com/share/ba8d4a11-7a6a-4c9d-8d2b-7a5daf856082
+// Define the attendance route
+router.get('/attent', (ctx) => {
+  // Extract query parameters
+  const { student, username, password } = ctx.query;
+
+  // Check if all required parameters are provided
+  if (!student || !username || !password) {
+    ctx.status = 400;
+    ctx.body = { error: 'Missing required query parameters' };
+    return;
+  }
+
+  // Generate a JSON response for attendance
+  const attendance = {
+    student: parseInt(student, 10), // Convert the student parameter to an integer
+    class_date: new Date().toISOString().split('T')[0] // Current date in YYYY-MM-DD format
+  };
+
+  combine("cs3660/fall2024/attendance.json", attendance);
+
+  // Set the response body
+  ctx.body = attendance;
+});
+
 router.get('/data/:path*', async (ctx) => {
   const path = ctx.params.path;
   const { json_path } = ctx.query;
