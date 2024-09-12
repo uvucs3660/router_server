@@ -32,9 +32,9 @@
         <form id="shorten-form">
             <input type="text" id="short-id" name="short-id" placeholder="Enter the Short ID"> (Created if blank)
             <input type="text" id="original-url" name="original-url" placeholder="Enter the URL to shorten" required>
+            <input type="text" id="short-url" name="short-url" placeholder="Shortened URL:"><button onclick="copyClipboard()">Copy text</button>
             <button type="submit">Shorten URL</button>
         </form>
-        <p id="result"></p>
     </div>
 
     <script>
@@ -51,8 +51,27 @@
             });
 
             const result = await response.json();
-            document.getElementById('result').textContent = `Shortened URL: ${result.shortUrl}`;
+            document.getElementById('short-url').value = result.shortUrl;
         });
+
+        function copyClipboard() {
+            // Get the text field
+            var copyText = document.getElementById("short-url");
+
+            // Select the text field
+            copyText.select();
+            copyText.setSelectionRange(0, 99999); // For mobile devices
+
+            if (window.isSecureContext && navigator.clipboard) {
+                navigator.clipboard.writeText(content);
+            } else {
+                try {
+                    document.execCommand('copy');
+                } catch (err) {
+                    console.error('Unable to copy to clipboard', err);
+                }
+            }          
+        }
 
     </script>
 </body>

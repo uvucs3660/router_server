@@ -50,6 +50,7 @@ client.on('message', async (topic, message) => {
   console.log('Processing: '+ path);
     if (topic.startsWith('save/')) {
     const data = JSON.parse(message.toString());
+    // this should be able to json schema validate here.
     await save(path, data);
   } else if (topic.startsWith('load/')) {
     const result = await load(path);
@@ -118,6 +119,7 @@ router.post('/data/:path*', async (ctx) => {
   let path = ctx.params.path;
   console.log("POST path: "+ path);
   const jsonStr = JSON.stringify(ctx.request.body);
+  // this should be able to json schema validate here.
   const result = await save(path, jsonStr);
   ctx.body = result.rows;
   ctx.body[0]['data'] = ctx.request.body;

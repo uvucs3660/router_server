@@ -19,12 +19,12 @@ class StudentActions extends LitElement {
         <ul>
           ${this.renderAction('Setup Presentation', 'setup')}
           ${this.renderAction('Present', 'present')}
-          ${this.renderAction('Log Time', 'log-time')}
-          ${this.renderAction('Record Attendance', 'record-attendance')}
-          ${this.renderAction('Review Attendance', 'review-attendance')}
-          ${this.renderAction('See Git Contributions', 'git-contributions')}
-          ${this.renderAction('Vote on Presentation', 'vote-presentation')}
-          ${this.renderAction('Vote on Team Collaboration', 'vote-collaboration')}
+          ${this.renderAction('Log Time', 'log')}
+          ${this.renderAction('Record Attendance', 'record')}
+          ${this.renderAction('Review Attendance', 'review')}
+          ${this.renderAction('See Git Contributions', 'git')}
+          ${this.renderAction('Vote on Presentation', 'vote')}
+          ${this.renderAction('Vote on Team Collaboration', 'easy')}
         </ul>
       </div>
     `;
