@@ -50,7 +50,7 @@ client.on('message', async (topic, message) => {
   console.log('Processing: '+ path);
     if (topic.startsWith('save/')) {
     const data = JSON.parse(message.toString());
-    // this should be able to json schema validate here.
+      // this should be able to json schema validate here.
     await save(path, data);
   } else if (topic.startsWith('load/')) {
     const result = await load(path);
@@ -280,7 +280,7 @@ router.get('/auth', async (ctx) => {
         <script type="module" src="javascript/student-actions.js"></script>
       </head>
       <body>
-        <student-actions data='${JSON.stringify(studentData)}'></student-actions>
+        <student-actions data='${JSON.stringify(studentData).replace(/'/g, "&apos;")}'></student-actions>
       </body>
     </html>
   `;
