@@ -13,7 +13,7 @@
 // api endpoint POST /data/path/to/data - takes a path and data and stores it
 
 // ours
-const { load, save, combine, loadUrl, saveUrl } = require('./store');
+const { allrows, load, save, combine, loadUrl, saveUrl } = require('./store');
 // native
 const path = require('path');
 const fs = require('fs');
@@ -32,15 +32,17 @@ const mqtt = require('mqtt');
 // Talking to the mqtt broker
 // Connect to MQTT broker
 
+
 const options = {
   username: process.env.MQTT_USER,
   password: process.env.MQTT_PASS
 }
 
-const client = mqtt.connect('mqtt://mqtt.uvucs.org', options);
+var mqttBroker = process.env.MQTT_SERVER;
+const client = mqtt.connect(mqttBroker , options);
 
 client.on('connect', () => {
-  console.log('Connected to MQTT broker');
+  console.log(`Connected to MQTT broker ${mqttBroker}`);
   client.subscribe('load/#');
   client.subscribe('save/#');
 });
@@ -65,7 +67,7 @@ client.on('message', async (topic, message) => {
 const app = new Koa();
 const router = new Router();
 const port = 8080 || process.env.SERVER_PORT;
-const baseUrl = `https://uvucs.org/s/`;
+const baseUrl = process.env.BASE_URL;
 
 const upload = multer({ 
   dest: 'uploads/',
@@ -106,11 +108,16 @@ router.get('/attent', (ctx) => {
   ctx.body = attendance;
 });
 
+// -----------------------------------------------
+// Database
+// -----------------------------------------------
+
 router.get('/data/:path*', async (ctx) => {
   const path = ctx.params.path;
   const { json_path } = ctx.query;
   
   console.log("GET path: "+ path);
+  
   const result = await load(path, json_path);
   ctx.body = result.rows[0].data;
 });
@@ -133,6 +140,39 @@ router.put('/data/:path*', async (ctx) => {
   ctx.body = result.rows;
   ctx.body[0]['data'] = ctx.request.body;
 });
+
+// -----------------------------------------------
+// Document Store
+// -----------------------------------------------
+router.get('/docs/export', async (ctx) => {
+
+  const result = await allrows('%');
+
+    for (const file of result.rows) {
+      const filePath = path.resolve(file.path);
+      const data = JSON.stringify(file.data);
+      try {
+        // Write data to the specified path
+        ensureDirectoryExistence(filePath);
+        fs.writeFileSync(filePath, data, 'utf8');
+      } catch (error) {
+        ctx.status = 500;
+        ctx.body = { error: 'Failed to write files', details: error.message };
+      }
+    }
+
+    ctx.status = 200;
+    ctx.body = { message: 'Files written successfully.' };
+});
+
+// Helper function to create directory if it doesn't exist
+function ensureDirectoryExistence(filePath) {
+  const dirname = path.dirname(filePath);
+  if (fs.existsSync(dirname)) {
+    return true;
+  }
+  fs.mkdirSync(dirname, { recursive: true });
+}
 
 // Characters used for encoding -- in ascii order
 const characters = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz~';
@@ -280,7 +320,7 @@ router.get('/auth', async (ctx) => {
         <script type="module" src="javascript/student-actions.js"></script>
       </head>
       <body>
-        <student-actions data='${JSON.stringify(studentData).replace(/'/g, "&apos;")}'></student-actions>
+        <user-actions data='${JSON.stringify(studentData).replace(/'/g, "&apos;")}'></student-actions>
       </body>
     </html>
   `;
@@ -301,7 +341,7 @@ router.post('/shorten', async (ctx) => {
 
   ctx.body = {
     originalUrl,
-    shortUrl: `${baseUrl}${shortUrl}`
+    shortUrl: `${baseUrl}$/s/{shortUrl}`
   };
 });
 
@@ -326,5 +366,5 @@ app.use(router.routes()).use(router.allowedMethods());
 
 // Start server
 app.listen(port, () => {
-  console.log(`Server running on http://localhost:${port}`);
+  console.log(`Server running on ${baseUrl}`);
 });

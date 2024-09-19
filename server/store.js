@@ -11,6 +11,10 @@ async function load(path, json_path) {
   }
 }
 
+async function allrows() {
+  return await queryDatabase('SELECT * FROM document_store order by path;');
+}
+
 async function save(path, data) {
   return await queryDatabase(`
     INSERT INTO document_store (path, data) VALUES ($1, $2)
@@ -45,9 +49,10 @@ async function saveUrl(id,url) {
 
 
 module.exports = {
-  load,
-  save,
+  allrows,
   combine,
+  load,
   loadUrl,
+  save,
   saveUrl
 };
