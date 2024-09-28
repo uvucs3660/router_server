@@ -53,7 +53,8 @@ client.on('message', async (topic, message) => {
     if (topic.startsWith('save/')) {
     const data = JSON.parse(message.toString());
       // this should be able to json schema validate here.
-    await save(path, data);
+    const result = await save(path, data);
+    client.publish(`data/${path}`, JSON.stringify(data));
   } else if (topic.startsWith('load/')) {
     const result = await load(path);
     client.publish(`data/${path}`, JSON.stringify(result.rows[0].data));
@@ -79,7 +80,21 @@ const upload = multer({
 // Middleware
 app.use(cors());
 app.use(koaBody());
-app.use(serve("html"));
+
+app.use(async (ctx, next) => {
+  const host = ctx.request.header.host;
+  
+  // Extract subdomain (assuming format: subdomain.domain.com or domain.com)
+  const parts = host.split('.');
+  let subdomain = 'html';
+  if (parts.length === 3) {
+      subdomain = parts[0];  // Use the first part as the subdomain
+  }
+
+  // Set up static file serving dynamically based on the subdomain or fallback to "html"
+  const staticPath = path.join(__dirname, subdomain);
+  return serve(staticPath)(ctx, next);
+});
 
 // Routes
 
@@ -349,7 +364,7 @@ router.post('/shorten', async (ctx) => {
 router.post('/upload', upload.single('file'), async (ctx) => {
   const file = ctx.file;
   const uploadname = file.originalname.split(".")[0];
-  const extractPath = path.join(__dirname, 'html/'+ uploadname);
+  const extractPath = path.join(__dirname, '/'+ uploadname);
 
   // Unzip the file
   await fs.createReadStream(file.path)
