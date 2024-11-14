@@ -17,27 +17,86 @@ const { allrows, load, save, combine, loadUrl, saveUrl } = require('./store');
 // native
 const path = require('path');
 const fs = require('fs');
+const { readFile } = require( "node:fs/promises");
 const { execSync } = require('child_process');
 // KOA
 const Koa = require('koa');
 const Router = require('koa-router');
+const websockify = require('koa-websocket');
 const serve = require('koa-static');
 const cors = require('koa-cors');
 const { koaBody } = require('koa-body');
 const multer = require('@koa/multer');
 const unzipper = require('unzipper');
+const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+const dotenv = require('dotenv');
+
 // MQTT
 const mqtt = require('mqtt');
 
 // Talking to the mqtt broker
 // Connect to MQTT broker
 
-
 const options = {
   username: process.env.MQTT_USER,
-  password: process.env.MQTT_PASS
+  password: process.env.MQTT_PASS,
 }
 
+const credentials = {
+  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+};
+
+// aws s3 configuration
+// Configure S3 client
+const s3Client = new S3Client({
+  region: process.env.AWS_REGION || 'us-east-1',
+  credentials: {
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+  }
+});
+
+async function uploadToS3(file) {
+  const params = {
+      Bucket: 'project3-team5',
+      Key: `${file.originalFilename}`,
+      Body: await readFile(file.filepath),
+      ContentType: file.mimetype,
+      ACL: 'public-read'
+  };
+
+  try {
+      await s3Client.send(new PutObjectCommand(params));
+      // Construct the S3 URL
+      return `https://project3-team5.s3.amazonaws.com/${params.Key}`;
+  } catch (error) {
+      console.error('Error uploading to S3:', error);
+      throw error;
+  }
+}
+
+// Helper function to upload to S3
+async function uploadToS3Parallel(file) {
+  const params = {
+      Bucket: 'project3-team5',
+      Key: `${file.originalFilename}`,
+      Body: file.buffer,
+      ContentType: file.mimetype,
+      ACL: 'public-read'
+  };
+
+  try {
+      await s3Client.send(new PutObjectCommand(params));
+      // Construct the S3 URL
+      return `https://project3-team5.s3.amazonaws.com/${params.Key}`;
+  } catch (error) {
+      console.error('Error uploading to S3:', error);
+      throw error;
+  }
+}
+
+//var mqttBroker = "mqtt://mqtt.uvucs.org";
 var mqttBroker = process.env.MQTT_SERVER;
 const client = mqtt.connect(mqttBroker , options);
 
@@ -48,7 +107,7 @@ client.on('connect', () => {
 });
 
 client.on('message', async (topic, message) => {
-  const path = topic.substring(topic.indexOf('/') + 1);  
+  const path = topic.substring(topic.indexOf('/') + 1);
   console.log('Processing: '+ path);
     if (topic.startsWith('save/')) {
     const data = JSON.parse(message.toString());
@@ -66,24 +125,34 @@ client.on('message', async (topic, message) => {
 //-------------------------------------------------------------------
 
 const app = new Koa();
+const wsapp = websockify(new Koa());
+const wsRouter = new Router();
 const router = new Router();
 const port = 8080 || process.env.SERVER_PORT;
 const baseUrl = process.env.BASE_URL;
 
+// Configure multer with memory storage
+const storage = multer.memoryStorage();
 const upload = multer({ 
-  dest: 'uploads/',
-  limits: {
-    fileSize: 512 * 1024 * 1024 // 512MB
-  }
- });
+    storage: storage,
+    limits: {
+        fileSize: 1024 * 1024 * 1024 // 5MB limit
+    }
+});
 
 // Middleware
 app.use(cors());
-app.use(koaBody());
+// Middleware for handling JSON payloads up to 128MB
+app.use(
+  koaBody({
+    jsonLimit: '128mb',
+  })
+);
+
 
 app.use(async (ctx, next) => {
   const host = ctx.request.header.host;
-  
+
   // Extract subdomain (assuming format: subdomain.domain.com or domain.com)
   const parts = host.split('.');
   let subdomain = 'html';
@@ -130,9 +199,9 @@ router.get('/attent', (ctx) => {
 router.get('/data/:path*', async (ctx) => {
   const path = ctx.params.path;
   const { json_path } = ctx.query;
-  
+
   console.log("GET path: "+ path);
-  
+
   const result = await load(path, json_path);
   ctx.body = result.rows[0].data;
 });
@@ -178,6 +247,25 @@ router.get('/docs/export', async (ctx) => {
 
     ctx.status = 200;
     ctx.body = { message: 'Files written successfully.' };
+});
+
+// Define a WebSocket route
+wsRouter.get('/ws', (ctx) => {
+  // Send a message when the client connects
+  ctx.websocket.send('Welcome to the WebSocket server!');
+
+  // Handle incoming messages from the client
+  ctx.websocket.on('message', (message) => {
+    console.log(`Received message: ${message}`);
+
+    // Echo the message back to the client
+    ctx.websocket.send(`Server says: ${message}`);
+  });
+
+  // Handle the close event
+  ctx.websocket.on('close', () => {
+    console.log('WebSocket connection closed');
+  });
 });
 
 // Helper function to create directory if it doesn't exist
@@ -245,6 +333,24 @@ router.get('/s/:shortUrl',  async (ctx) => {
   }
 });
 
+// Route for shortening a new URL
+let currentId = 1; // Initialize a counter to generate unique IDs for URLs
+router.post('/shorten', async (ctx) => {
+  const { shortId, originalUrl } = ctx.request.body;
+  if (!originalUrl) {
+    ctx.status = 400;
+    ctx.body = 'Invalid request: originalUrl is required';
+    return;
+  }
+  const result = await saveUrl(decode(shortId), originalUrl);
+  const shortUrl = encode(result.rows[0].short_id); // Encode the current ID to generate the short URL
+
+  ctx.body = {
+    originalUrl,
+    shortUrl: `${baseUrl}$/s/{shortUrl}`
+  };
+});
+
 // Function to execute shell commands
 function runCommand(command, cwd) {
   return new Promise((resolve, reject) => {
@@ -259,6 +365,51 @@ function runCommand(command, cwd) {
     });
   });
 }
+
+// Route for redirecting to the original URL
+// https://uvucs.org/auth?s=1&f=first&l=last&g=github&u=username&p=password
+router.get('/auth', async (ctx) => {
+  // Extract query parameters
+  const { s, f, l, g, u, p } = ctx.query;
+
+  // Create JSON object from URL parameters
+  const studentData = {
+    student: s,
+    first: f,
+    last: l,
+    github: g,
+    username: u,
+    password: p,
+  };
+
+  // Pass data to HTML template
+  ctx.body = `
+    <!DOCTYPE html>
+    <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <title>Student Actions</title>
+        <script type="module" src="javascript/student-actions.js"></script>
+      </head>
+      <body>
+        <user-actions data='${JSON.stringify(studentData).replace(/'/g, "&apos;")}'></student-actions>
+      </body>
+    </html>
+  `;
+});
+
+// Middleware for handling ZIP file uploads up to 1024mb
+app.use(
+  koaBody({
+    formidable: {
+      uploadDir: path.join(__dirname, '/upload'),
+      keepExtensions: true,
+      maxFileSize: 1024 * 1024 * 1024, // 500MB limit
+    },
+    multipart: true,
+    urlencoded: true,
+  }
+));
 
 // Route to handle file upload and subsequent operations
 router.post('/appload', koaBody({ multipart: true }), async (ctx) => {
@@ -309,72 +460,73 @@ router.post('/appload', koaBody({ multipart: true }), async (ctx) => {
   }
 });
 
-// Route for redirecting to the original URL
-// https://uvucs.org/auth?s=1&f=first&l=last&g=github&u=username&p=password
-router.get('/auth', async (ctx) => {
-  // Extract query parameters
-  const { s, f, l, g, u, p } = ctx.query;
+// Route to handle file uploads
+router.post('/upload', async (ctx) => {
+  const files = ctx.request.files;
 
-  // Create JSON object from URL parameters
-  const studentData = {
-    student: s,
-    first: f,
-    last: l,
-    github: g,
-    username: u,
-    password: p,
-  };
-
-  // Pass data to HTML template
-  ctx.body = `
-    <!DOCTYPE html>
-    <html lang="en">
-      <head>
-        <meta charset="UTF-8">
-        <title>Student Actions</title>
-        <script type="module" src="javascript/student-actions.js"></script>
-      </head>
-      <body>
-        <user-actions data='${JSON.stringify(studentData).replace(/'/g, "&apos;")}'></student-actions>
-      </body>
-    </html>
-  `;
-});
-
-
-// Route for shortening a new URL
-let currentId = 1; // Initialize a counter to generate unique IDs for URLs
-router.post('/shorten', async (ctx) => {
-  const { shortId, originalUrl } = ctx.request.body;
-  if (!originalUrl) {
+  if (!files || !files.file) {
     ctx.status = 400;
-    ctx.body = 'Invalid request: originalUrl is required';
+    ctx.body = { error: 'No file uploaded' };
     return;
   }
-  const result = await saveUrl(decode(shortId), originalUrl);
-  const shortUrl = encode(result.rows[0].short_id); // Encode the current ID to generate the short URL
 
-  ctx.body = {
-    originalUrl,
-    shortUrl: `${baseUrl}$/s/{shortUrl}`
-  };
+  const uploadedFile = files.file;
+  const filePath = uploadedFile.filepath;
+  const fileName = path.basename(filePath, path.extname(filePath));
+  const extractDirName = uploadedFile.originalFilename.split(".")[0];
+  const extractDir = path.join(__dirname, extractDirName);
+
+  try {
+    // Create directory for extracted files
+    fs.mkdirSync(extractDir, { recursive: true });
+
+    // Unzip the file into the directory
+    await fs.createReadStream(filePath)
+      .pipe(unzipper.Extract({ path: extractDir }))
+      .promise();
+
+    // Delete the uploaded zip file
+    fs.unlinkSync(filepath);      
+
+    ctx.status = 200;
+    ctx.body = { message: 'File uploaded and extracted successfully', directory: fileName };
+  } catch (error) {
+    ctx.status = 500;
+    ctx.body = { error: 'Failed to extract the ZIP file', details: error.message };
+  }
 });
 
-// New endpoint for file upload
-router.post('/upload', upload.single('file'), async (ctx) => {
-  const file = ctx.file;
-  const uploadname = file.originalname.split(".")[0];
-  const extractPath = path.join(__dirname, '/'+ uploadname);
+// File upload endpoint
+router.post('/uploads3',  async (ctx) => {
+  try {
+      const file = ctx.request.files.file;
+      
+      if (!file) {
+          ctx.status = 400;
+          ctx.body = { error: 'No file uploaded' };
+          return;
+      }
 
-  // Unzip the file
-  await fs.createReadStream(file.path)
-    .pipe(unzipper.Extract({ path: extractPath }))
-    .promise();
+      if (!file.originalFilename || !file.size > 0|| !file.mimetype) {
+          ctx.status = 400;
+          ctx.body = { error: 'Invalid file format' };
+          return;
+      }
 
-  // Delete the uploaded zip file
-  fs.unlinkSync(file.path);
+      const fileUrl = await uploadToS3(file);
 
-  ctx.body = { message: 'File uploaded and extracted successfully' };
+      ctx.body = {
+          success: true,
+          fileUrl: fileUrl
+      };
+  } catch (error) {
+      console.error('Upload error:', error);
+      ctx.status = 500;
+      ctx.body = {
+          success: false,
+          error: error.message || 'Error uploading file'
+      };
+  }
 });
 
 app.use(router.routes()).use(router.allowedMethods());

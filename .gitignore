@@ -3,3 +3,4 @@ server/node_modules/
 server/.idea/
 .DS_Store
 server/.ebextensions/
+node_modules/
