@@ -30,6 +30,7 @@ const multer = require('@koa/multer');
 const unzipper = require('unzipper');
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const dotenv = require('dotenv');
+const https = require('https');
 
 // MQTT
 const mqtt = require('mqtt');
@@ -69,7 +70,7 @@ async function uploadToS3(file) {
   try {
       await s3Client.send(new PutObjectCommand(params));
       // Construct the S3 URL
-      return `https://project3-team5.s3.amazonaws.com/${params.Key}`;
+      return `https://project3-team5.s3.us-east-1.amazonaws.com/${params.Key}`;
   } catch (error) {
       console.error('Error uploading to S3:', error);
       throw error;
@@ -96,8 +97,7 @@ async function uploadToS3Parallel(file) {
   }
 }
 
-//var mqttBroker = "mqtt://mqtt.uvucs.org";
-var mqttBroker = process.env.MQTT_SERVER;
+var mqttBroker =  "mqtt://mqtt.uvucs.org" || process.env.MQTT_SERVER;
 const client = mqtt.connect(mqttBroker , options);
 
 client.on('connect', () => {
@@ -112,7 +112,7 @@ client.on('message', async (topic, message) => {
     if (topic.startsWith('save/')) {
     const data = JSON.parse(message.toString());
       // this should be able to json schema validate here.
-    const result = await save(path, data);
+    const result = await save(path, JSON.stringify(data));
     client.publish(`data/${path}`, JSON.stringify(data));
   } else if (topic.startsWith('load/')) {
     const result = await load(path);
@@ -128,8 +128,15 @@ const app = new Koa();
 const wsapp = websockify(new Koa());
 const wsRouter = new Router();
 const router = new Router();
-const port = 8080 || process.env.SERVER_PORT;
+const httpPort = 8080 || process.env.HTTP_PORT;
+const httpsPort = 8443 || process.env.HTTPS_PORT;
 const baseUrl = process.env.BASE_URL;
+
+// SSL/TLS configuration
+const httpsOptions = {
+  key: fs.readFileSync(process.env.SSL_KEY_PATH || 'path/to/key.pem'),
+  cert: fs.readFileSync(process.env.SSL_CERT_PATH || 'path/to/cert.pem')
+};
 
 // Configure multer with memory storage
 const storage = multer.memoryStorage();
@@ -531,7 +538,11 @@ router.post('/uploads3',  async (ctx) => {
 
 app.use(router.routes()).use(router.allowedMethods());
 
-// Start server
-app.listen(port, () => {
-  console.log(`Server running on ${baseUrl}`);
+// Start servers
+app.listen(httpPort, () => {
+  console.log(`HTTP Server running on ${baseUrl}:${httpPort}`);
+});
+
+https.createServer(httpsOptions, app.callback()).listen(httpsPort, () => {
+  console.log(`HTTPS Server running on ${baseUrl}:${httpsPort}`);
 });
