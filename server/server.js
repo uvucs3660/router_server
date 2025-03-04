@@ -35,6 +35,16 @@ const https = require('https');
 // MQTT
 const mqtt = require('mqtt');
 
+// XState
+const { createMachine, createActor, toPromise } = require('xstate');
+const {
+  loadStateChart,
+  saveStateChart,
+  loadStateInstance,
+  saveStateInstance,
+  setupXStateInterpreter
+} = require('./modules/xstate/xutil');
+
 // Talking to the mqtt broker
 // Connect to MQTT broker
 
@@ -104,6 +114,10 @@ client.on('connect', () => {
   console.log(`Connected to MQTT broker ${mqttBroker}`);
   client.subscribe('load/#');
   client.subscribe('save/#');
+  
+  // Subscribe to XState event topics
+  client.subscribe('xstate/chart/+/event');
+  client.subscribe('xstate/chart/+/reload');
 });
 
 client.on('message', async (topic, message) => {
@@ -117,6 +131,96 @@ client.on('message', async (topic, message) => {
   } else if (topic.startsWith('load/')) {
     const result = await load(path);
     client.publish(`data/${path}`, JSON.stringify(result.rows[0].data));
+  }
+  // Handle XState event messages
+  else if (topic.startsWith('xstate/chart/') && topic.endsWith('/event')) {
+    try {
+      // Parse the chart ID from the topic
+      const topicParts = topic.split('/');
+      const chartId = topicParts[2];
+      
+      // Parse the event message
+      const eventMessage = JSON.parse(message.toString());
+      const { stateId, type, data } = eventMessage;
+      
+      if (!stateId || !type) {
+        console.error('Invalid event message: missing stateId or type');
+        return;
+      }
+      
+      console.log(`Processing event for chart ${chartId}, state ${stateId}, type ${type}`);
+      
+      // Get or create the actor for this chart and state
+      const actor = await retryWithBackoff(() => getOrCreateActor(chartId, stateId));
+      
+      if (!actor) {
+        client.publish(`xstate/chart/${chartId}/error`, JSON.stringify({
+          stateId,
+          error: 'Failed to create or retrieve state machine actor',
+          timestamp: new Date().toISOString()
+        }));
+        return;
+      }
+      
+      // Send the event to the actor
+      actor.send({ type, ...data });
+      
+    } catch (error) {
+      console.error('Error processing XState event:', error);
+      
+      // Extract chart ID for error reporting
+      const chartId = topic.split('/')[2];
+      client.publish(`xstate/chart/${chartId}/error`, JSON.stringify({
+        error: error.message,
+        timestamp: new Date().toISOString()
+      }));
+    }
+  }
+  // Handle chart reload requests
+  else if (topic.startsWith('xstate/chart/') && topic.endsWith('/reload')) {
+    try {
+      // Parse the chart ID from the topic
+      const topicParts = topic.split('/');
+      const chartId = topicParts[2];
+      
+      // Parse the reload message
+      const reloadMessage = JSON.parse(message.toString());
+      const { stateId } = reloadMessage;
+      
+      if (!stateId) {
+        console.error('Invalid reload message: missing stateId');
+        return;
+      }
+      
+      console.log(`Reloading chart ${chartId}, state ${stateId}`);
+      
+      // Remove existing actor if present
+      const key = `${chartId}:${stateId}`;
+      if (activeStateMachines.has(key)) {
+        const existingActor = activeStateMachines.get(key);
+        existingActor.stop();
+        activeStateMachines.delete(key);
+      }
+      
+      // Create a new actor
+      const actor = await retryWithBackoff(() => getOrCreateActor(chartId, stateId));
+      
+      if (actor) {
+        console.log(`Successfully reloaded chart ${chartId}, state ${stateId}`);
+      } else {
+        console.error(`Failed to reload chart ${chartId}, state ${stateId}`);
+      }
+      
+    } catch (error) {
+      console.error('Error reloading XState chart:', error);
+      
+      // Extract chart ID for error reporting
+      const chartId = topic.split('/')[2];
+      client.publish(`xstate/chart/${chartId}/error`, JSON.stringify({
+        error: error.message,
+        timestamp: new Date().toISOString()
+      }));
+    }
   }
 });
 
@@ -533,6 +637,62 @@ router.post('/uploads3',  async (ctx) => {
           success: false,
           error: error.message || 'Error uploading file'
       };
+  }
+});
+
+// REST endpoints for XState charts
+router.get('/xstate/chart/:chartId', async (ctx) => {
+  try {
+    const { chartId } = ctx.params;
+    const result = await loadStateChart(chartId);
+    
+    if (!result) {
+      ctx.status = 404;
+      ctx.body = { error: `State chart ${chartId} not found` };
+      return;
+    }
+    
+    ctx.body = result;
+  } catch (error) {
+    ctx.status = 500;
+    ctx.body = { error: error.message };
+  }
+});
+
+router.post('/xstate/chart/:chartId', async (ctx) => {
+  try {
+    const { chartId } = ctx.params;
+    const chartDefinition = ctx.request.body;
+    
+    await saveStateChart(chartId, chartDefinition);
+    
+    // Notify any subscribers that the chart has been updated
+    client.publish(`xstate/chart/${chartId}/updated`, JSON.stringify({
+      timestamp: new Date().toISOString()
+    }));
+    
+    ctx.body = { success: true };
+  } catch (error) {
+    ctx.status = 500;
+    ctx.body = { error: error.message };
+  }
+});
+
+router.get('/xstate/state/:chartId/:stateId', async (ctx) => {
+  try {
+    const { chartId, stateId } = ctx.params;
+    const result = await loadStateInstance(chartId, stateId);
+    
+    if (!result) {
+      ctx.status = 404;
+      ctx.body = { error: `State instance ${chartId}/${stateId} not found` };
+      return;
+    }
+    
+    ctx.body = result;
+  } catch (error) {
+    ctx.status = 500;
+    ctx.body = { error: error.message };
   }
 });
 
