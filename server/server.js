@@ -12,14 +12,17 @@
 // api endpoint GET /data/path/to/data - takes a path and returns data
 // api endpoint POST /data/path/to/data - takes a path and data and stores it
 
+
 // ours
+const dotenv = require('dotenv');
+dotenv.config();
+
 const { allrows, load, save, combine, loadUrl, saveUrl } = require('./store');
 // native
 const path = require('path');
 const fs = require('fs');
 const { readFile } = require( "node:fs/promises");
-const { execSync } = require('child_process');
-// KOA
+const { exec, execSync } = require('child_process');
 const Koa = require('koa');
 const Router = require('koa-router');
 const websockify = require('koa-websocket');
@@ -29,8 +32,9 @@ const { koaBody } = require('koa-body');
 const multer = require('@koa/multer');
 const unzipper = require('unzipper');
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
-const dotenv = require('dotenv');
 const https = require('https');
+
+
 
 // MQTT
 const mqtt = require('mqtt');
@@ -131,26 +135,35 @@ client.on('message', async (topic, message) => {
 async function onCommand(topic, message) {
   console.log('Processing: '+ topic);
 
-  // Parse the topic URL style
-  // Format: "questions/<collaborationId>/all?json_path=$.phoneNumbers[:1].type"
-
   let {json_path, basePath} = getPaths(topic, 'json_path');
   const collaborationId = basePath.split('/')[1];
   if (basePath.endsWith('/answered')) {
     let answered_path = '$.context.questions[?length(@.answer) > 0]';
-    const result = await jsonPath('collaboration/${collaborationId}', answered_path);
-    mqttClient.publish(`questions/${collaborationId}/answered/`, JSON.stringify(result.rows[0].data));
+    const result = await jsonPath(`collaboration/${collaborationId}`, answered_path);
+    client.publish(`questions/${collaborationId}/answered/`, JSON.stringify(result.rows[0].data));
   } else if (basePath.endsWith('/unanswered')) {
     let answered_path = '$.context.questions[?(@.answer == null || @.answer == "" || !(@.answer))]';
-    const result = await jsonPath('collaboration/${collaborationId}', answered_path);
-    mqttClient.publish(`questions/${collaborationId}/answered/`, JSON.stringify(result.rows[0].data));
+    const result = await jsonPath(`collaboration/${collaborationId}`, answered_path);
+    client.publish(`questions/${collaborationId}/answered/`, JSON.stringify(result.rows[0].data));
   } else if (basePath[2] === 'save') {
-    const result = await updateJson('collaboration/${collaborationId}', JSON.stringify(message), json_path);
-    mqttClient.publish(`questions/${collaborationId}/data/`, JSON.stringify(message));
+    const result = await updateJson(`collaboration/${collaborationId}`, JSON.stringify(message), json_path);
+    client.publish(`questions/${collaborationId}/data/`, JSON.stringify(message));
   } else if (basePath.endsWith('load')) {
     const result = await jsonPath('collaboration/' + collaborationId, json_path);
-    mqttClient.publish(`questions/${collaborationId}/data/`, JSON.stringify(result.rows[0]));
+    client.publish(`questions/${collaborationId}/data/`, JSON.stringify(result.rows[0]));
   }
+}
+
+async function jsonPath(path, jsonPathQuery) {
+  // Implementation needed - placeholder
+  const data = await load(path);
+  // Apply jsonPath query to data
+  return data;
+}
+
+async function updateJson(path, jsonData, jsonPathQuery) {
+  // Implementation needed - placeholder
+  return await save(path, jsonData);
 }
 
 function getPaths(topic, param) {
@@ -177,19 +190,23 @@ const app = new Koa();
 const wsapp = websockify(new Koa());
 const wsRouter = new Router();
 const router = new Router();
-const httpPort = 8080 || process.env.HTTP_PORT;
-const httpsPort = 8443 || process.env.HTTPS_PORT;
+const httpPort = process.env.HTTP_PORT || 8080;
+const httpsPort = process.env.HTTPS_PORT || 8443;
 const baseUrl = process.env.BASE_URL;
 
 // SSL/TLS configuration
 const httpsOptions = {
-  key: fs.readFileSync(process.env.SSL_KEY_PATH || 'path/to/key.pem'),
-  cert: fs.readFileSync(process.env.SSL_CERT_PATH || 'path/to/cert.pem')
+  key: fs.existsSync(process.env.SSL_KEY_PATH)
+      ? fs.readFileSync(process.env.SSL_KEY_PATH)
+      : (fs.existsSync('./key.pem') ? fs.readFileSync('./key.pem') : null),
+  cert: fs.existsSync(process.env.SSL_CERT_PATH)
+      ? fs.readFileSync(process.env.SSL_CERT_PATH)
+      : (fs.existsSync('./cert.pem') ? fs.readFileSync('./cert.pem') : null)
 };
 
 // Configure multer with memory storage
 const storage = multer.memoryStorage();
-const upload = multer({ 
+const upload = multer({
     storage: storage,
     limits: {
         fileSize: 1024 * 1024 * 1024 // 5MB limit
@@ -305,6 +322,8 @@ router.get('/docs/export', async (ctx) => {
     ctx.body = { message: 'Files written successfully.' };
 });
 
+
+
 // Define a WebSocket route
 wsRouter.get('/ws', (ctx) => {
   // Send a message when the client connects
@@ -403,8 +422,9 @@ router.post('/shorten', async (ctx) => {
 
   ctx.body = {
     originalUrl,
-    shortUrl: `${baseUrl}$/s/{shortUrl}`
+    shortUrl: `${baseUrl}/s/${shortUrl}`
   };
+
 });
 
 // Function to execute shell commands
@@ -421,6 +441,7 @@ function runCommand(command, cwd) {
     });
   });
 }
+
 
 // Route for redirecting to the original URL
 // https://uvucs.org/auth?s=1&f=first&l=last&g=github&u=username&p=password
@@ -501,11 +522,12 @@ router.post('/appload', koaBody({ multipart: true }), async (ctx) => {
 
   // Run npm install in server and html directories
   try {
+
     await runCommand('npm install', path.join(extractedDir, 'server'));
     await runCommand('npm install', path.join(extractedDir, 'html'));
 
     // Run node server.js from the server directory
-    runCommand('node server.js', path.join(extractedDir, 'server'));
+    await runCommand('node server.js', path.join(extractedDir, 'server'));
 
     ctx.status = 200;
     ctx.body = 'File uploaded and processed successfully';
@@ -542,7 +564,7 @@ router.post('/upload', async (ctx) => {
       .promise();
 
     // Delete the uploaded zip file
-    fs.unlinkSync(filepath);      
+    fs.unlinkSync(filePath);
 
     ctx.status = 200;
     ctx.body = { message: 'File uploaded and extracted successfully', directory: fileName };
@@ -556,7 +578,7 @@ router.post('/upload', async (ctx) => {
 router.post('/uploads3',  async (ctx) => {
   try {
       const file = ctx.request.files.file;
-      
+
       if (!file) {
           ctx.status = 400;
           ctx.body = { error: 'No file uploaded' };
@@ -586,6 +608,8 @@ router.post('/uploads3',  async (ctx) => {
 });
 
 app.use(router.routes()).use(router.allowedMethods());
+
+wsapp.ws.use(wsRouter.routes()).use(wsRouter.allowedMethods());
 
 // Start servers
 app.listen(httpPort, () => {
