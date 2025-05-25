@@ -34,8 +34,6 @@ const unzipper = require('unzipper');
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const https = require('https');
 
-
-
 // MQTT
 const mqtt = require('mqtt');
 
@@ -193,6 +191,14 @@ const router = new Router();
 const httpPort = process.env.HTTP_PORT || 8080;
 const httpsPort = process.env.HTTPS_PORT || 8443;
 const baseUrl = process.env.BASE_URL;
+
+const httpUrl = new URL(baseUrl);
+httpUrl.port = httpPort;
+
+const httpsUrl = new URL(baseUrl);
+httpsUrl.port = httpsPort;
+
+
 
 // SSL/TLS configuration
 const httpsOptions = {
@@ -422,7 +428,7 @@ router.post('/shorten', async (ctx) => {
 
   ctx.body = {
     originalUrl,
-    shortUrl: `${baseUrl}/s/${shortUrl}`
+    shortUrl: `${httpsUrl.href}/s/${shortUrl}`
   };
 
 });
@@ -613,9 +619,9 @@ wsapp.ws.use(wsRouter.routes()).use(wsRouter.allowedMethods());
 
 // Start servers
 app.listen(httpPort, () => {
-  console.log(`HTTP Server running on ${baseUrl}:${httpPort}`);
+  console.log(`HTTP Server running on ${httpUrl.href}`);
 });
 
 https.createServer(httpsOptions, app.callback()).listen(httpsPort, () => {
-  console.log(`HTTPS Server running on ${baseUrl}:${httpsPort}`);
+  console.log(`HTTPS Server running on ${httpsUrl.href}`);
 });
