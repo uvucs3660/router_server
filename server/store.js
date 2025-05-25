@@ -1,13 +1,13 @@
 const { queryDatabase } = require('./database');
 
-async function load(path, json_path) {
+async function load(path, json_path = null) {
   if (json_path) {
     return await queryDatabase(`
-      SELECT jsonb_path_query_array(data, $2) AS result
+      SELECT jsonb_path_query(data::jsonb, $2) AS data
       FROM document_store
       WHERE path = $1;`, [path, json_path]);
   } else {
-    return await queryDatabase('SELECT * FROM document_store WHERE path = $1', [path]);
+    return await queryDatabase('SELECT data FROM document_store WHERE path = $1', [path]);
   }
 }
 
@@ -47,12 +47,29 @@ async function saveUrl(id,url) {
     }
   }
 
-
-module.exports = {
-  allrows,
-  combine,
-  load,
-  loadUrl,
-  save,
-  saveUrl
-};
+  async function jsonPath(path, json_path) {
+    return await queryDatabase(`
+      SELECT jsonb_path_query(data::jsonb, $2)::json as data
+      FROM document_store
+      WHERE path = $1;`, [path, json_path]);
+  }
+  
+  async function updateJson(path, data, json_path) {
+    return await queryDatabase(`
+      UPDATE document_store
+      SET data = jsonb_set(data, $2, $3)
+      WHERE path = $1;`,
+      [path, json_path, data]);
+  }
+  
+  module.exports = {
+    allrows,
+    combine,
+    load,
+    loadUrl,
+    save,
+    saveUrl,
+    jsonPath,
+    updateJson,
+  };
+  
