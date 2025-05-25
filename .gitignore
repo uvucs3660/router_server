@@ -4,3 +4,4 @@ server/.idea/
 .DS_Store
 server/.ebextensions/
 node_modules/
+.idea/

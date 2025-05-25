@@ -13,10 +13,10 @@
 // api endpoint POST /data/path/to/data - takes a path and data and stores it
 
 
-// ours
+// environment
 const dotenv = require('dotenv');
 dotenv.config();
-
+// ours
 const { allrows, load, save, combine, loadUrl, saveUrl } = require('./store');
 // native
 const path = require('path');
@@ -34,16 +34,6 @@ const unzipper = require('unzipper');
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const https = require('https');
 
-// MQTT
-const mqtt = require('mqtt');
-
-// Talking to the mqtt broker
-// Connect to MQTT broker
-
-const options = {
-  username: process.env.MQTT_USER,
-  password: process.env.MQTT_PASS,
-}
 
 const credentials = {
   accessKeyId: process.env.AWS_ACCESS_KEY_ID,
@@ -99,11 +89,23 @@ async function uploadToS3Parallel(file) {
   }
 }
 
-var mqttBroker =  process.env.MQTT_SERVER || "mqtt://dev.2h2.us";
+// MQTT
+const mqtt = require('mqtt');
+
+// Talking to the mqtt broker
+// Connect to MQTT broker
+
+const options = {
+  username: process.env.MQTT_USER || 'user',
+  password: process.env.MQTT_PASS || 'pass',
+}
+
+var mqttBroker =  process.env.MQTT_SERVER || "mqtt://dev.2h2.us:1883";
+console.log(`Connect   --->  to MQTT broker : ${mqttBroker}`);
 const client = mqtt.connect(mqttBroker , options);
 
 client.on('connect', () => {
-  console.log(`Connected to MQTT broker ${mqttBroker}`);
+  console.log(`Connected <--- to MQTT broker : ${mqttBroker}`);
   client.subscribe('load/#');
   client.subscribe('save/#');
 });
@@ -198,8 +200,6 @@ httpUrl.port = httpPort;
 const httpsUrl = new URL(baseUrl);
 httpsUrl.port = httpsPort;
 
-
-
 // SSL/TLS configuration
 const httpsOptions = {
   key: fs.existsSync(process.env.SSL_KEY_PATH)
@@ -235,7 +235,7 @@ app.use(async (ctx, next) => {
   // Extract subdomain (assuming format: subdomain.domain.com or domain.com)
   const parts = host.split('.');
   let subdomain = 'html';
-  if (parts.length === 3) {
+  if (parts.length === 3 && parts[0] !== 'dev') {
       subdomain = parts[0];  // Use the first part as the subdomain
   }
 
