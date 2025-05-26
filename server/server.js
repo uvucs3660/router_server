@@ -265,7 +265,7 @@ router.get('/attent', (ctx) => {
     class_date: new Date().toISOString().split('T')[0] // Current date in YYYY-MM-DD format
   };
 
-  combine("cs3660/fall2024/attendance.json", attendance);
+  combine("cs3660/fall2025/attendance.json", attendance);
 
   // Set the response body
   ctx.body = attendance;
@@ -610,49 +610,6 @@ router.post('/uploads3',  async (ctx) => {
           success: false,
           error: error.message || 'Error uploading file'
       };
-  }
-});
-
-// Add MQTT authentication route
-router.post('/mqtt-auth', async (ctx) => {
-  const { username, password } = ctx.request.body;
-
-  if (!username || !password) {
-    ctx.status = 400;
-    ctx.body = { success: false, message: 'Username and password are required' };
-    return;
-  }
-
-  try {
-    // Create test connection to verify credentials
-    const testClient = mqtt.connect(mqttBroker, {
-      username: username,
-      password: password,
-      reconnectPeriod: 0 // Don't attempt to reconnect
-    });
-
-    // Return authentication result
-    const result = await new Promise((resolve) => {
-      testClient.on('connect', () => {
-        testClient.end();
-        resolve({ success: true, message: 'Authentication successful' });
-      });
-
-      testClient.on('error', (err) => {
-        resolve({ success: false, message: 'Authentication failed', error: err.message });
-      });
-
-      // Handle connection timeout
-      setTimeout(() => {
-        testClient.end();
-        resolve({ success: false, message: 'Authentication timeout' });
-      }, 5000);
-    });
-
-    ctx.body = result;
-  } catch (error) {
-    ctx.status = 500;
-    ctx.body = { success: false, message: 'Server error', error: error.message };
   }
 });
 
