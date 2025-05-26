@@ -453,7 +453,7 @@ function runCommand(command, cwd) {
 // https://uvucs.org/auth?s=1&f=first&l=last&g=github&u=username&p=password
 router.get('/auth', async (ctx) => {
   // Extract query parameters
-  const { s, f, l, g, u, p } = ctx.query;
+  const { s, f, l, g, u, a } = ctx.query;
 
   // Create JSON object from URL parameters
   const studentData = {
@@ -462,7 +462,7 @@ router.get('/auth', async (ctx) => {
     last: l,
     github: g,
     username: u,
-    password: p,
+    authenticated: a === 'true',
   };
 
   // Pass data to HTML template
@@ -610,6 +610,49 @@ router.post('/uploads3',  async (ctx) => {
           success: false,
           error: error.message || 'Error uploading file'
       };
+  }
+});
+
+// Add MQTT authentication route
+router.post('/mqtt-auth', async (ctx) => {
+  const { username, password } = ctx.request.body;
+
+  if (!username || !password) {
+    ctx.status = 400;
+    ctx.body = { success: false, message: 'Username and password are required' };
+    return;
+  }
+
+  try {
+    // Create test connection to verify credentials
+    const testClient = mqtt.connect(mqttBroker, {
+      username: username,
+      password: password,
+      reconnectPeriod: 0 // Don't attempt to reconnect
+    });
+
+    // Return authentication result
+    const result = await new Promise((resolve) => {
+      testClient.on('connect', () => {
+        testClient.end();
+        resolve({ success: true, message: 'Authentication successful' });
+      });
+
+      testClient.on('error', (err) => {
+        resolve({ success: false, message: 'Authentication failed', error: err.message });
+      });
+
+      // Handle connection timeout
+      setTimeout(() => {
+        testClient.end();
+        resolve({ success: false, message: 'Authentication timeout' });
+      }, 5000);
+    });
+
+    ctx.body = result;
+  } catch (error) {
+    ctx.status = 500;
+    ctx.body = { success: false, message: 'Server error', error: error.message };
   }
 });
 
