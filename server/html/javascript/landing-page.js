@@ -1,5 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { mqttService } from './mqtt-service.js';
+import { StudentActions } from './student-actions.js'
 
 export class LandingPage extends LitElement {
     static properties = {
@@ -204,7 +205,7 @@ export class LandingPage extends LitElement {
     render() {
         return html`
       <div class="header">
-        <div class="logo">MQTT Dashboard</div>
+        <div class="logo">CS3660 Dashboard</div>
         
         <div class="user-section">
           <div class="user-info" @click=${this.toggleMenu}>
@@ -248,6 +249,11 @@ export class LandingPage extends LitElement {
         </div>
 
         <div class="stats-grid">
+            
+        <div class="stat-card">
+            <student-actions></student-actions>
+        </div>
+            
           <div class="stat-card">
             <div class="stat-value">Active</div>
             <div class="stat-label">Connection Status</div>
